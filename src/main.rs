@@ -1,32 +1,31 @@
+use api::hello::ApiDoc;
 use axum::{
-    extract::Path, response::Html, routing::get, Json, Router
+    extract::Path, response::Html, routing::{get, post}, Json, Router
 };
+use diesel::r2d2::{self, ConnectionManager};
+use diesel::PgConnection;
+
 use serde::Deserialize;
 
 use utoipa::{OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 
+type DbPool = r2d2::Pool<ConnectionManager<PgConnection>>;
 
-#[derive(OpenApi)]
-#[openapi(
-    paths(
-        handler_hello,
-        handler_hello_name
-    ),
-    components(schemas(HelloParams))
-)]
-pub struct ApiDoc;
-
-#[derive(Deserialize, utoipa::IntoParams, ToSchema)]
-struct HelloParams {
-    name: Option<String>,
-}
+mod config;
+mod db;
+mod api;
+mod docs;
 
 #[tokio::main]
 async fn main() {
+    config::load_env();
+
+    let pool = db::create_pool().expect("Failed to create pool.");
+    
     let app = Router::new()
-        .route("/", get(handler_hello))
-        .route("/:name", get(handler_hello_name))
+        .route("/", get(api::hello::handler_hello))
+        .route("/:name", get(api::hello::handler_hello_name))
         .merge(SwaggerUi::new("/swagger-ui").url("/api-doc/openapi.json", ApiDoc::openapi()));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
@@ -37,26 +36,4 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-#[utoipa::path(
-    get,
-    path = "/",
-    responses(
-        (status = 200, description = "Send a salute from Axum")
-    )
-)]
-async fn handler_hello() -> Html<String> {
-    Html(format!("<h1>Hello, World!</h1>"))
-}
-
-#[utoipa::path(
-    get,
-    path = "/:name",
-    responses(
-        (status = 200, description = "Send a salute from Axum")
-    )
-)]
-async fn handler_hello_name(Path(params): Path<HelloParams>) -> Html<String> {
-    let name = params.name.as_deref().unwrap_or("World!");
-    Html(format!("<h1>Hello, {name}</h1>"))
-}
 
